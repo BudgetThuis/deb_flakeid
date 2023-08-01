@@ -11,3 +11,4 @@ jobs:
     secrets: inherit
     with:
       package-project-name: ${{ vars.PACKAGE_PRODUCT_NAME }}
+      package-nuget-name: ${{ vars.PACKAGE_NUGET_NAME }}
