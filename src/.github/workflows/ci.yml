@@ -17,4 +17,3 @@ jobs:
       create-rmq-home-instance: false
       create-mssql: false
       fail-below-min-threshold: false
-
