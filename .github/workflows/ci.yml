@@ -6,6 +6,7 @@ on:
       - 'master'
       - 'renovate/**patch**'
   pull_request:
+  workflow_dispatch:
 
 jobs:
   ci-workflow:
