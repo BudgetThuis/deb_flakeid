@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 using FlakeId.Extensions;
 
 namespace FlakeId
 {
+    /// <summary>
+    ///     Represents a unique, K-ordered, sortable identifier.
+    /// </summary>
     [DebuggerDisplay("{_value}")]
     public struct Id : IComparable<Id>
     {
@@ -37,22 +40,27 @@ namespace FlakeId
         private long _value;
 
         private static int s_increment;
+
         // Calling Process.GetCurrentProcess() is a very slow operation, as it has to query the operating system.
         // Because it's highly unlikely the process ID will change (if at all possible) during our run time, we'll cache it.
         private static int? s_processId;
 
-        private const int TimestampBits = 42;
-        private const int ThreadIdBits = 5;
-        private const int ProcessIdBits = 5;
-        private const int IncrementBits = 12;
+        internal const int TimestampBits = 42;
+        internal const int ThreadIdBits = 5;
+        internal const int ProcessIdBits = 5;
+        internal const int IncrementBits = 12;
 
-        private const long TimestampMask = (1L << TimestampBits) - 1;
-        private const int ThreadIdMask = (1 << ThreadIdBits) - 1;
-        private const int ProcessIdMask = (1 << ProcessIdBits) - 1;
-        private const int IncrementMask = (1 << IncrementBits) - 1;
+        internal const long TimestampMask = (1L << TimestampBits) - 1;
+        internal const int ThreadIdMask = (1 << ThreadIdBits) - 1;
+        internal const int ProcessIdMask = (1 << ProcessIdBits) - 1;
+        internal const int IncrementMask = (1 << IncrementBits) - 1;
 
         public Id(long value) => _value = value;
 
+        /// <summary>
+        ///     Creates a new, unique ID.
+        /// </summary>
+        /// <returns></returns>
         public static Id Create()
         {
             Id id = new Id();
@@ -62,9 +70,43 @@ namespace FlakeId
             return id;
         }
 
+        /// <summary>
+        ///     Creates a new ID based on the provided timestamp in milliseconds. 
+        ///     When using this overload, make sure you take the timezone of the provided timestamp into consideration.
+        /// </summary>
+        /// <param name="timeStampMs"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentOutOfRangeException">Timestamps can not be negative</exception>
+        public static Id Create(long timeStampMs)
+        {
+            if (timeStampMs < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeStampMs));
+            }
+
+            Id id = new Id();
+            long relativeTimeStamp = timeStampMs - MonotonicTimer.Epoch.ToUnixTimeMilliseconds();
+
+            if (relativeTimeStamp < 0) 
+            {
+                throw new ArgumentException("Specified timestamp would result in a negative ID (it's before instance epoch)");
+            }
+
+            id.CreateInternal(relativeTimeStamp);
+
+            return id;
+        }
+
+        /// <summary>
+        ///     Attempts to parse an ID from the specified <see cref="long" /> value. This method will return false if the
+        ///     specified value doesn't match the shape of a snowflake ID.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="id"></param>
+        /// <returns></returns>
         public static bool TryParse(long value, out Id id)
         {
-            var input = new Id(value);
+            Id input = new Id(value);
 
             if (!input.IsSnowflake())
             {
@@ -76,27 +118,37 @@ namespace FlakeId
             return true;
         }
 
+        /// <summary>
+        ///     Parses an ID from the specified <see cref="long" /> value, and throws an exception if the shape of the value
+        ///     doesn't match that of a valid ID.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        /// <exception cref="FormatException"></exception>
         public static Id Parse(long value)
         {
-            var id = new Id(value);
+            Id id = new Id(value);
 
             if (!id.IsSnowflake())
+            {
                 throw new FormatException("The specified value is not a valid snowflake");
+            }
 
             return id;
         }
 
-        private void CreateInternal()
+        private void CreateInternal(long timeStampMs = 0)
         {
-            long milliseconds = MonotonicTimer.ElapsedMilliseconds;
+            long milliseconds = timeStampMs == 0 ? MonotonicTimer.ElapsedMilliseconds : timeStampMs;
             long timestamp = milliseconds & TimestampMask;
             int threadId = Thread.CurrentThread.ManagedThreadId & ThreadIdMask;
-            int processId = s_processId ??= Process.GetCurrentProcess().Id & ProcessIdMask;
+            // int processId = s_processId ??= Process.GetCurrentProcess().Id & ProcessIdMask;
+            if (s_processId is null)
+                s_processId = Process.GetCurrentProcess().Id & ProcessIdMask;
+            int processId = s_processId.Value;
 
-            Interlocked.Increment(ref s_increment);
-            
-            int increment = s_increment & IncrementMask;
-            
+            int increment = Interlocked.Increment(ref s_increment) & IncrementMask;
+
             unchecked
             {
                 _value = (timestamp << (ThreadIdBits + ProcessIdBits + IncrementBits))
@@ -119,7 +171,7 @@ namespace FlakeId
         public bool Equals(Id other) => _value == other._value;
 
         public override bool Equals(object obj) => obj is Id other && Equals(other);
-        
+
         public override int GetHashCode() => _value.GetHashCode();
     }
 }
